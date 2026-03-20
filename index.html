@@ -564,6 +564,20 @@ document.addEventListener('keydown', (e) => {
         startGame();
       }
       break;
+    case 'Escape':
+      if (phase !== 'idle') {
+        stopTimer();
+        phase = 'idle';
+        clearCanvas();
+        clearDotStyles();
+        resultEl.textContent = '';
+        msgEl.style.color = '#ffd700';
+        msgEl.style.fontSize = '22px';
+        msgEl.textContent = 'スペースキーでスタート';
+        timerBar.style.width = '100%';
+        timerBar.style.background = '#4caf50';
+      }
+      break;
     case ' ':
       if (phase === 'idle') {
         startGame();
