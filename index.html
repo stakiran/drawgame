@@ -511,8 +511,15 @@ function endDrawPhase() {
 
   hp -= penalty;
   if (penalty === 0) {
-    score += demoPattern.length - 1;
-    details.push(`パーフェクト！ +${demoPattern.length - 1}点`);
+    let earned = demoPattern.length - 1;
+    const timeBonus = Math.floor((allowedTime - elapsed) * 10);
+    if (timeBonus > 0) earned += timeBonus;
+    score += earned;
+    if (timeBonus > 0) {
+      details.push(`パーフェクト！ +${demoPattern.length - 1}点 / 時間ボーナス +${timeBonus}点`);
+    } else {
+      details.push(`パーフェクト！ +${earned}点`);
+    }
   }
 
   clearCanvas();
