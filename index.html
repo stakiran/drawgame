@@ -347,6 +347,8 @@ function startGame() {
   score = 0;
   phase = 'idle';
   resultEl.textContent = '';
+  msgEl.style.color = '#ffd700';
+  msgEl.style.fontSize = '22px';
   updateUI();
   initGrid();
   nextTurn();
@@ -517,7 +519,11 @@ function endDrawPhase() {
   updateUI();
 
   const timeStr = elapsed.toFixed(2);
-  resultEl.innerHTML = `経過: ${timeStr}秒 / 制限: ${allowedTime.toFixed(2)}秒<br>${details.join(' | ')}`;
+  let damageStr = '';
+  if (penalty > 0) {
+    damageStr = `<br><span style="color:#f44336;font-size:20px;font-weight:bold;">合計 ${penalty} ダメージ</span>`;
+  }
+  resultEl.innerHTML = `経過: ${timeStr}秒 / 制限: ${allowedTime.toFixed(2)}秒<br>${details.join(' | ')}${damageStr}`;
 
   if (hp <= 0) {
     hp = 0;
@@ -536,8 +542,10 @@ function edgeKey(a, b) {
 
 function gameOver() {
   phase = 'gameover';
-  msgEl.textContent = 'ゲームオーバー [スペースでリトライ]';
-  resultEl.innerHTML += `<br><br>最終スコア: ${score} (Turn ${turn})`;
+  msgEl.style.color = '#f44336';
+  msgEl.style.fontSize = '32px';
+  msgEl.textContent = 'GAME OVER';
+  resultEl.innerHTML += `<br><br><span style="color:#f44336;font-size:20px;font-weight:bold;">最終スコア: ${score} (Turn ${turn})</span><br><span style="color:#aaa;">スペースでリトライ</span>`;
 }
 
 // ===== Keyboard Input =====
