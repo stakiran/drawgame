@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infinite Action</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  color: #eee;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  user-select: none;
+}
+
+#header {
+  display: flex;
+  gap: 32px;
+  padding: 16px;
+  font-size: 18px;
+}
+#header span { font-weight: bold; }
+
+#message {
+  font-size: 22px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffd700;
+}
+
+#grid-container {
+  position: relative;
+  margin: 16px;
+}
+
+canvas#lineCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+#grid {
+  display: grid;
+  position: relative;
+  z-index: 1;
+}
+
+.dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: background 0.15s, transform 0.15s;
+  position: relative;
+  z-index: 2;
+}
+.dot.highlight {
+  background: #ffd700;
+  transform: scale(1.3);
+}
+.dot.cursor {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+}
+.dot.selectable {
+  background: #66bb6a;
+}
+.dot.active {
+  background: #42a5f5;
+  transform: scale(1.2);
+}
+.dot.start-marker {
+  background: #ff9800;
+  transform: scale(1.2);
+}
+
+#timer-bar-container {
+  width: 320px;
+  height: 12px;
+  background: #333;
+  border-radius: 6px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+#timer-bar {
+  height: 100%;
+  background: #4caf50;
+  border-radius: 6px;
+  transition: width 0.05s linear;
+}
+
+#result {
+  margin-top: 16px;
+  font-size: 16px;
+  min-height: 80px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+#controls {
+  margin-top: 16px;
+  font-size: 14px;
+  color: #888;
+  text-align: center;
+  line-height: 1.6;
+}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div>HP: <span id="hp">20</span></div>
+  <div>Turn: <span id="turn">0</span></div>
+  <div>Score: <span id="score">0</span></div>
+</div>
+
+<div id="message">スペースキーでスタート</div>
+
+<div id="timer-bar-container">
+  <div id="timer-bar" style="width:100%"></div>
+</div>
+
+<div id="grid-container">
+  <canvas id="lineCanvas"></canvas>
+  <div id="grid"></div>
+</div>
+
+<div id="result"></div>
+
+<div id="controls">
+  カーソルキー: 移動 / スペース: 決定
+</div>
+
+<script>
+// ===== Config =====
+const GRID_SIZE = 4;
+const DOT_SIZE = 36;
+const GAP = 60;
+const INITIAL_HP = 20;
+const SELECT_TIME = 3.0;
+const GRACE = 0.2;
+const BASE_LENGTH = 3;
+const BASE_SPEED = 2.0;
+
+// ===== State =====
+let hp, turn, score;
+let phase; // 'idle' | 'demo' | 'select' | 'draw' | 'result' | 'gameover'
+let demoPattern; // [{r, c}, ...]
+let demoSpeed;
+let demoLength;
+let playerPath;
+let playerStartTime;
+let timerRAF;
+
+// Cursor
+let curR = 0, curC = 0;
+
+// ===== DOM =====
+const gridEl = document.getElementById('grid');
+const canvasEl = document.getElementById('lineCanvas');
+const ctx = canvasEl.getContext('2d');
+const hpEl = document.getElementById('hp');
+const turnEl = document.getElementById('turn');
+const scoreEl = document.getElementById('score');
+const msgEl = document.getElementById('message');
+const timerBar = document.getElementById('timer-bar');
+const resultEl = document.getElementById('result');
+const containerEl = document.getElementById('grid-container');
+
+let dots = []; // 2D array of DOM elements
+
+function initGrid() {
+  gridEl.innerHTML = '';
+  gridEl.style.gridTemplateColumns = `repeat(${GRID_SIZE}, ${DOT_SIZE}px)`;
+  gridEl.style.gap = `${GAP}px`;
+  dots = [];
+  for (let r = 0; r < GRID_SIZE; r++) {
+    dots[r] = [];
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      dot.dataset.r = r;
+      dot.dataset.c = c;
+      gridEl.appendChild(dot);
+      dots[r][c] = dot;
+    }
+  }
+  const totalW = GRID_SIZE * DOT_SIZE + (GRID_SIZE - 1) * GAP;
+  const totalH = GRID_SIZE * DOT_SIZE + (GRID_SIZE - 1) * GAP;
+  containerEl.style.width = totalW + 'px';
+  containerEl.style.height = totalH + 'px';
+  canvasEl.width = totalW;
+  canvasEl.height = totalH;
+}
+
+function dotCenter(r, c) {
+  const x = c * (DOT_SIZE + GAP) + DOT_SIZE / 2;
+  const y = r * (DOT_SIZE + GAP) + DOT_SIZE / 2;
+  return { x, y };
+}
+
+function clearCanvas() {
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+}
+
+function drawLine(r1, c1, r2, c2, color, width) {
+  const a = dotCenter(r1, c1);
+  const b = dotCenter(r2, c2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+}
+
+function drawPath(path, color, width) {
+  for (let i = 0; i < path.length - 1; i++) {
+    drawLine(path[i].r, path[i].c, path[i + 1].r, path[i + 1].c, color, width);
+  }
+}
+
+function clearDotStyles() {
+  for (let r = 0; r < GRID_SIZE; r++)
+    for (let c = 0; c < GRID_SIZE; c++)
+      dots[r][c].className = 'dot';
+}
+
+function updateCursor() {
+  // Remove old cursor
+  for (let r = 0; r < GRID_SIZE; r++)
+    for (let c = 0; c < GRID_SIZE; c++)
+      dots[r][c].classList.remove('cursor');
+  // Set new cursor
+  dots[curR][curC].classList.add('cursor');
+}
+
+function moveCursor(dr, dc) {
+  const nr = curR + dr;
+  const nc = curC + dc;
+  if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) return;
+
+  if (phase === 'select') {
+    curR = nr;
+    curC = nc;
+    updateCursor();
+  } else if (phase === 'draw') {
+    // Move draws a line to the adjacent dot
+    if (playerPath.some(p => p.r === nr && p.c === nc)) return; // no revisit
+    curR = nr;
+    curC = nc;
+    const last = playerPath[playerPath.length - 1];
+    playerPath.push({ r: nr, c: nc });
+    dots[nr][nc].classList.add('active');
+    drawLine(last.r, last.c, nr, nc, '#42a5f5', 4);
+    updateCursor();
+  }
+}
+
+// ===== Pattern Generation =====
+function neighbors(r, c) {
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  const result = [];
+  for (const [dr, dc] of dirs) {
+    const nr = r + dr, nc = c + dc;
+    if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
+      result.push({ r: nr, c: nc });
+    }
+  }
+  return result;
+}
+
+function generatePattern(length) {
+  const startR = Math.floor(Math.random() * GRID_SIZE);
+  const startC = Math.floor(Math.random() * GRID_SIZE);
+  const path = [{ r: startR, c: startC }];
+  const visited = new Set();
+  visited.add(`${startR},${startC}`);
+
+  for (let i = 0; i < length; i++) {
+    const cur = path[path.length - 1];
+    const options = neighbors(cur.r, cur.c).filter(n => !visited.has(`${n.r},${n.c}`));
+    if (options.length === 0) break;
+    const next = options[Math.floor(Math.random() * options.length)];
+    path.push(next);
+    visited.add(`${next.r},${next.c}`);
+  }
+  return path;
+}
+
+// ===== Difficulty =====
+function calcDifficulty(turn) {
+  const length = BASE_LENGTH + Math.floor(turn / 3);
+  const maxLength = GRID_SIZE * GRID_SIZE - 1;
+  const clampedLength = Math.min(length, maxLength);
+  const speed = Math.max(0.5, BASE_SPEED - turn * 0.08);
+  return { length: clampedLength, speed };
+}
+
+// ===== Timer =====
+function startTimerBar(duration, onExpire) {
+  const start = performance.now();
+  cancelAnimationFrame(timerRAF);
+
+  function tick() {
+    const elapsed = (performance.now() - start) / 1000;
+    const ratio = Math.max(0, 1 - elapsed / duration);
+    timerBar.style.width = (ratio * 100) + '%';
+    timerBar.style.background = ratio > 0.3 ? '#4caf50' : ratio > 0.1 ? '#ff9800' : '#f44336';
+
+    if (elapsed >= duration) {
+      timerBar.style.width = '0%';
+      if (onExpire) onExpire();
+      return;
+    }
+    timerRAF = requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function stopTimer() {
+  cancelAnimationFrame(timerRAF);
+}
+
+// ===== Game Flow =====
+function updateUI() {
+  hpEl.textContent = hp;
+  turnEl.textContent = turn;
+  scoreEl.textContent = score;
+}
+
+function startGame() {
+  hp = INITIAL_HP;
+  turn = 0;
+  score = 0;
+  phase = 'idle';
+  resultEl.textContent = '';
+  updateUI();
+  initGrid();
+  nextTurn();
+}
+
+function nextTurn() {
+  turn++;
+  updateUI();
+  clearCanvas();
+  clearDotStyles();
+  resultEl.textContent = '';
+  playerPath = [];
+
+  const diff = calcDifficulty(turn);
+  demoLength = diff.length;
+  demoSpeed = diff.speed;
+  demoPattern = generatePattern(demoLength);
+
+  msgEl.textContent = `Turn ${turn} — 長さ:${demoPattern.length - 1} スピード:${demoSpeed.toFixed(2)}秒`;
+  setTimeout(() => startDemo(), 800);
+}
+
+function startDemo() {
+  phase = 'demo';
+  msgEl.textContent = 'お手本を見てください';
+  clearCanvas();
+  clearDotStyles();
+
+  const lineCount = demoPattern.length - 1;
+  const interval = (demoSpeed / lineCount) * 1000;
+  let i = 0;
+
+  dots[demoPattern[0].r][demoPattern[0].c].classList.add('highlight');
+
+  function drawNext() {
+    if (i >= lineCount) {
+      setTimeout(() => {
+        clearCanvas();
+        clearDotStyles();
+        startSelectPhase();
+      }, 600);
+      return;
+    }
+    const p = demoPattern[i];
+    const q = demoPattern[i + 1];
+    drawLine(p.r, p.c, q.r, q.c, '#ffd700', 4);
+    dots[q.r][q.c].classList.add('highlight');
+    i++;
+    setTimeout(drawNext, interval);
+  }
+
+  setTimeout(drawNext, 300);
+}
+
+function startSelectPhase() {
+  phase = 'select';
+  msgEl.textContent = 'スタート地点を選択 (3秒) [カーソル+スペース]';
+  clearDotStyles();
+
+  for (let r = 0; r < GRID_SIZE; r++)
+    for (let c = 0; c < GRID_SIZE; c++)
+      dots[r][c].classList.add('selectable');
+
+  // Reset cursor to center
+  curR = Math.floor(GRID_SIZE / 2);
+  curC = Math.floor(GRID_SIZE / 2);
+  updateCursor();
+
+  startTimerBar(SELECT_TIME, () => {
+    if (phase !== 'select') return;
+    // Auto-select current cursor position
+    playerPath = [{ r: curR, c: curC }];
+    beginDrawPhase();
+  });
+}
+
+function confirmSelect() {
+  if (phase !== 'select') return;
+  playerPath = [{ r: curR, c: curC }];
+  beginDrawPhase();
+}
+
+function beginDrawPhase() {
+  stopTimer();
+  phase = 'draw';
+  clearDotStyles();
+  clearCanvas();
+
+  msgEl.textContent = 'ドロー！ [カーソルで移動 / スペースで確定]';
+
+  const start = playerPath[0];
+  curR = start.r;
+  curC = start.c;
+  dots[start.r][start.c].classList.add('active');
+  updateCursor();
+
+  playerStartTime = performance.now();
+  const allowedTime = demoSpeed + GRACE;
+  startTimerBar(allowedTime, () => {
+    if (phase !== 'draw') return;
+    endDrawPhase();
+  });
+}
+
+function confirmDraw() {
+  if (phase !== 'draw') return;
+  endDrawPhase();
+}
+
+function endDrawPhase() {
+  if (phase !== 'draw') return;
+  phase = 'result';
+  stopTimer();
+
+  const elapsed = (performance.now() - playerStartTime) / 1000;
+  const allowedTime = demoSpeed + GRACE;
+
+  let penalty = 0;
+  let details = [];
+
+  const demoEdges = [];
+  for (let i = 0; i < demoPattern.length - 1; i++) {
+    demoEdges.push(edgeKey(demoPattern[i], demoPattern[i + 1]));
+  }
+  const playerEdges = [];
+  for (let i = 0; i < playerPath.length - 1; i++) {
+    playerEdges.push(edgeKey(playerPath[i], playerPath[i + 1]));
+  }
+
+  let wrongCount = 0;
+  for (const e of playerEdges) {
+    if (!demoEdges.includes(e)) wrongCount++;
+  }
+  if (wrongCount > 0) {
+    penalty += wrongCount;
+    details.push(`間違い: -${wrongCount}`);
+  }
+
+  let missingCount = 0;
+  for (const e of demoEdges) {
+    if (!playerEdges.includes(e)) missingCount++;
+  }
+  if (missingCount > 0) {
+    penalty += missingCount;
+    details.push(`不足: -${missingCount}`);
+  }
+
+  if (elapsed > allowedTime) {
+    const overTime = elapsed - allowedTime;
+    const timePenalty = Math.ceil(overTime);
+    penalty += timePenalty;
+    details.push(`時間超過(${overTime.toFixed(1)}秒): -${timePenalty}`);
+  }
+
+  hp -= penalty;
+  if (penalty === 0) {
+    score += demoPattern.length - 1;
+    details.push(`パーフェクト！ +${demoPattern.length - 1}点`);
+  }
+
+  clearCanvas();
+  clearDotStyles();
+  drawPath(demoPattern, 'rgba(255,215,0,0.4)', 6);
+  drawPath(playerPath, '#42a5f5', 3);
+
+  dots[demoPattern[0].r][demoPattern[0].c].classList.add('start-marker');
+
+  updateUI();
+
+  const timeStr = elapsed.toFixed(2);
+  resultEl.innerHTML = `経過: ${timeStr}秒 / 制限: ${allowedTime.toFixed(2)}秒<br>${details.join(' | ')}`;
+
+  if (hp <= 0) {
+    hp = 0;
+    updateUI();
+    gameOver();
+  } else {
+    setTimeout(() => nextTurn(), 2000);
+  }
+}
+
+function edgeKey(a, b) {
+  const k1 = `${a.r},${a.c}-${b.r},${b.c}`;
+  const k2 = `${b.r},${b.c}-${a.r},${a.c}`;
+  return k1 < k2 ? k1 : k2;
+}
+
+function gameOver() {
+  phase = 'gameover';
+  msgEl.textContent = 'ゲームオーバー [スペースでリトライ]';
+  resultEl.innerHTML += `<br><br>最終スコア: ${score} (Turn ${turn})`;
+}
+
+// ===== Keyboard Input =====
+document.addEventListener('keydown', (e) => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+    e.preventDefault();
+  }
+
+  switch (e.key) {
+    case 'ArrowUp':    moveCursor(-1, 0); break;
+    case 'ArrowDown':  moveCursor(1, 0);  break;
+    case 'ArrowLeft':  moveCursor(0, -1); break;
+    case 'ArrowRight': moveCursor(0, 1);  break;
+    case ' ':
+      if (phase === 'idle' || phase === 'gameover') {
+        startGame();
+      } else if (phase === 'select') {
+        confirmSelect();
+      } else if (phase === 'draw') {
+        confirmDraw();
+      }
+      break;
+  }
+});
+
+// Init
+phase = 'idle';
+initGrid();
+</script>
+</body>
+</html>
