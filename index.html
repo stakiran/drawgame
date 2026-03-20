@@ -413,8 +413,8 @@ function startSelectPhase() {
       dots[r][c].classList.add('selectable');
 
   // Reset cursor to center
-  curR = Math.floor(GRID_SIZE / 2);
-  curC = Math.floor(GRID_SIZE / 2);
+  curR = Math.floor(Math.random() * GRID_SIZE);
+  curC = Math.floor(Math.random() * GRID_SIZE);
   updateCursor();
 
   startTimerBar(SELECT_TIME, () => {
