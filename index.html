@@ -355,6 +355,7 @@ function startGame() {
 }
 
 function nextTurn() {
+  phase = 'starting';
   turn++;
   updateUI();
   clearCanvas();
@@ -368,7 +369,10 @@ function nextTurn() {
   demoPattern = generatePattern(demoLength);
 
   msgEl.textContent = `Turn ${turn} — 長さ:${demoPattern.length - 1} スピード:${demoSpeed.toFixed(2)}秒`;
-  setTimeout(() => startDemo(), 800);
+  setTimeout(() => {
+    if (phase === 'idle' || phase === 'gameover') return;
+    startDemo();
+  }, 800);
 }
 
 function startDemo() {
@@ -384,8 +388,10 @@ function startDemo() {
   dots[demoPattern[0].r][demoPattern[0].c].classList.add('highlight');
 
   function drawNext() {
+    if (phase !== 'demo') return;
     if (i >= lineCount) {
       setTimeout(() => {
+        if (phase !== 'demo') return;
         clearCanvas();
         clearDotStyles();
         startSelectPhase();
@@ -530,7 +536,10 @@ function endDrawPhase() {
     updateUI();
     gameOver();
   } else {
-    setTimeout(() => nextTurn(), 2000);
+    setTimeout(() => {
+      if (phase !== 'result') return;
+      nextTurn();
+    }, 2000);
   }
 }
 
