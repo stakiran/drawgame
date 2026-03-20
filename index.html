@@ -545,12 +545,12 @@ function gameOver() {
   msgEl.style.color = '#f44336';
   msgEl.style.fontSize = '32px';
   msgEl.textContent = 'GAME OVER';
-  resultEl.innerHTML += `<br><br><span style="color:#f44336;font-size:20px;font-weight:bold;">最終スコア: ${score} (Turn ${turn})</span><br><span style="color:#aaa;">スペースでリトライ</span>`;
+  resultEl.innerHTML += `<br><br><span style="color:#f44336;font-size:20px;font-weight:bold;">最終スコア: ${score} (Turn ${turn})</span><br><span style="color:#aaa;">Enterでリトライ</span>`;
 }
 
 // ===== Keyboard Input =====
 document.addEventListener('keydown', (e) => {
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter'].includes(e.key)) {
     e.preventDefault();
   }
 
@@ -559,8 +559,13 @@ document.addEventListener('keydown', (e) => {
     case 'ArrowDown':  moveCursor(1, 0);  break;
     case 'ArrowLeft':  moveCursor(0, -1); break;
     case 'ArrowRight': moveCursor(0, 1);  break;
+    case 'Enter':
+      if (phase === 'gameover') {
+        startGame();
+      }
+      break;
     case ' ':
-      if (phase === 'idle' || phase === 'gameover') {
+      if (phase === 'idle') {
         startGame();
       } else if (phase === 'select') {
         confirmSelect();
