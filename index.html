@@ -305,7 +305,7 @@ function calcDifficulty(turn) {
   const length = BASE_LENGTH + Math.floor(turn / 3);
   const maxLength = GRID_SIZE * GRID_SIZE - 1;
   const clampedLength = Math.min(length, maxLength);
-  const speed = Math.max(0.5, BASE_SPEED - turn * 0.08);
+  const speed = Math.max(1.0, BASE_SPEED - turn * 0.08);
   return { length: clampedLength, speed };
 }
 
